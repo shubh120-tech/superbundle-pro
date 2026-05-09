@@ -13,16 +13,16 @@ generator client {
 }
 
 // ── LOCAL DEV (SQLite) ────────────────────────────────────────────────────────
-datasource db {
-  provider = "sqlite"
-  url      = "file:dev.sqlite"
-}
+//datasource db {
+//  provider = "sqlite"
+//  url      = "file:dev.sqlite"
+//}
 
 // ── PRODUCTION (PostgreSQL) — uncomment for Railway ───────────────────────────
-// datasource db {
-//   provider = "postgresql"
-//   url      = env("DATABASE_URL")
-// }
+ datasource db {
+   provider = "postgresql"
+   url      = env("DATABASE_URL")
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHOPIFY REQUIRED
