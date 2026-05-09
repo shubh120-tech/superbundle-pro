@@ -22,15 +22,19 @@ export const action = async ({ request }) => {
   const formData = await request.formData();
   const intent = formData.get("intent");
 
+  // ── Import YouTube URLs ──────────────────────────────────────────────────
   if (intent === "import_youtube") {
     const urls = (formData.get("urls") || "").split("\n").map(u => u.trim()).filter(Boolean);
     const autoPublish = formData.get("autoPublish") === "true";
+    const titleInput = formData.get("title") || "";
+
     if (urls.length === 0) return { success: false, message: "Please enter at least one YouTube URL." };
 
-    const videos = urls.map(url => {
+    const videos = urls.map((url, i) => {
       const ytMatch = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
       const thumbnailUrl = ytMatch ? `https://img.youtube.com/vi/${ytMatch[1]}/hqdefault.jpg` : "";
-      const title = formData.get("title") || (url.includes("shorts") ? "YouTube Short" : "YouTube Video");
+      const isShort = url.includes("shorts");
+      const title = titleInput || (isShort ? `YouTube Short ${i > 0 ? i + 1 : ""}`.trim() : `YouTube Video ${i > 0 ? i + 1 : ""}`.trim());
       return { shop: session.shop, title, videoUrl: url, thumbnailUrl, source: "youtube", published: autoPublish, productIds: "[]" };
     });
 
@@ -40,25 +44,31 @@ export const action = async ({ request }) => {
     return { success: true, message: `${videos.length} YouTube video${videos.length > 1 ? "s" : ""} imported!` };
   }
 
-  if (intent === "import_upload") {
+  // ── Save Cloudinary uploaded video to DB ─────────────────────────────────
+  if (intent === "save_uploaded") {
     const videoUrl = formData.get("videoUrl");
+    const thumbnailUrl = formData.get("thumbnailUrl") || "";
     const title = formData.get("title") || "Uploaded Video";
     const autoPublish = formData.get("autoPublish") === "true";
-    if (!videoUrl) return { success: false, message: "Please enter a video URL." };
+
+    if (!videoUrl) return { success: false, message: "No video URL." };
+
     try {
       await db.video.create({
-        data: { shop: session.shop, title, videoUrl, thumbnailUrl: "", source: "upload", published: autoPublish, productIds: "[]" },
+        data: { shop: session.shop, title, videoUrl, thumbnailUrl, source: "upload", published: autoPublish, productIds: "[]" },
       });
     } catch (e) { return { success: false, message: e.message }; }
-    return { success: true, message: "Video uploaded successfully!" };
+    return { success: true, message: "Video saved successfully!" };
   }
 
+  // ── Delete ───────────────────────────────────────────────────────────────
   if (intent === "delete") {
     try { await db.video.delete({ where: { id: parseInt(formData.get("videoId")) } }); }
     catch (e) { return { success: false, message: e.message }; }
     return { success: true };
   }
 
+  // ── Toggle publish ───────────────────────────────────────────────────────
   if (intent === "toggle_publish") {
     const videoId = parseInt(formData.get("videoId"));
     const published = formData.get("published") === "true";
@@ -77,39 +87,116 @@ export default function VideoImport() {
   const fileInputRef = useRef(null);
 
   const [activeTab, setActiveTab] = useState("youtube");
+
+  // YouTube state
   const [ytUrls, setYtUrls] = useState("");
   const [ytTitle, setYtTitle] = useState("");
-  const [uploadUrl, setUploadUrl] = useState("");
-  const [uploadTitle, setUploadTitle] = useState("");
+  const [ytAutoPublish, setYtAutoPublish] = useState(true);
+
+  // Upload state
   const [uploadedFile, setUploadedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
-  const [autoPublish, setAutoPublish] = useState(true);
+  const [uploadTitle, setUploadTitle] = useState("");
+  const [uploadAutoPublish, setUploadAutoPublish] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState("");
+  const [uploadSuccess, setUploadSuccess] = useState("");
+  const [cloudinaryConfigured, setCloudinaryConfigured] = useState(true);
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     setUploadedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
-    setUploadTitle(file.name.replace(/\.[^/.]+$/, ""));
+    setUploadTitle(prev => prev || file.name.replace(/\.[^/.]+$/, ""));
+    setUploadError("");
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith("video/")) {
+      setUploadedFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+      setUploadTitle(prev => prev || file.name.replace(/\.[^/.]+$/, ""));
+      setUploadError("");
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!uploadedFile) return;
+    setUploading(true);
+    setUploadProgress(0);
+    setUploadError("");
+    setUploadSuccess("");
+
+    try {
+      // Step 1 — Upload file to Cloudinary via our API
+      const formData = new FormData();
+      formData.append("file", uploadedFile);
+
+      // Simulate progress
+      const progressInterval = setInterval(() => {
+        setUploadProgress(p => Math.min(p + 10, 85));
+      }, 300);
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      clearInterval(progressInterval);
+      setUploadProgress(95);
+
+      const data = await res.json();
+
+      if (!data.success) {
+        if (data.message?.includes("Cloudinary credentials not configured")) {
+          setCloudinaryConfigured(false);
+        }
+        setUploadError(data.message || "Upload failed");
+        setUploading(false);
+        return;
+      }
+
+      setUploadProgress(100);
+
+      // Step 2 — Save to DB
+      fetcher.submit({
+        intent: "save_uploaded",
+        videoUrl: data.url,
+        thumbnailUrl: data.thumbnailUrl || "",
+        title: uploadTitle || "Uploaded Video",
+        autoPublish: String(uploadAutoPublish),
+      }, { method: "POST" });
+
+      setUploadSuccess(`✅ Video uploaded successfully! ${(uploadedFile.size / 1024 / 1024).toFixed(1)}MB`);
+      setUploadedFile(null);
+      setPreviewUrl("");
+      setUploadTitle("");
+
+    } catch (e) {
+      setUploadError("Upload failed: " + e.message);
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+    }
   };
 
   const handleYouTubeImport = () => {
     if (!ytUrls.trim()) return;
-    fetcher.submit({ intent: "import_youtube", urls: ytUrls, title: ytTitle, autoPublish: String(autoPublish) }, { method: "POST" });
+    fetcher.submit({
+      intent: "import_youtube",
+      urls: ytUrls,
+      title: ytTitle,
+      autoPublish: String(ytAutoPublish),
+    }, { method: "POST" });
     setYtUrls("");
     setYtTitle("");
   };
 
-  const handleUploadImport = () => {
-    if (!uploadUrl.trim() && !uploadedFile) return;
-    fetcher.submit({ intent: "import_upload", videoUrl: uploadUrl || previewUrl, title: uploadTitle, autoPublish: String(autoPublish) }, { method: "POST" });
-    setUploadUrl("");
-    setUploadTitle("");
-    setUploadedFile(null);
-    setPreviewUrl("");
-  };
-
-  // Live YouTube preview
+  // YouTube preview
   const getYtThumb = (url) => {
     const match = url.trim().split("\n")[0].match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
     return match ? `https://img.youtube.com/vi/${match[1]}/hqdefault.jpg` : null;
@@ -125,7 +212,7 @@ export default function VideoImport() {
       {/* Tabs */}
       <s-section>
         <div style={{ display: "flex", gap: "4px", borderBottom: "1px solid #e1e3e5" }}>
-          {[["youtube", "▶️ YouTube"], ["upload", "⬆️ Device Upload"], ["history", "📋 All Videos"]].map(([tab, label]) => (
+          {[["youtube", "▶️ YouTube"], ["upload", "⬆️ Device Upload"], ["history", `📋 All Videos (${recentImports.length})`]].map(([tab, label]) => (
             <button key={tab} onClick={() => setActiveTab(tab)} style={{
               padding: "10px 18px", border: "none", cursor: "pointer", fontSize: "13px",
               fontWeight: activeTab === tab ? "600" : "400", background: "transparent",
@@ -137,19 +224,21 @@ export default function VideoImport() {
         </div>
       </s-section>
 
-      {/* ── YouTube Tab ── */}
+      {/* ── YouTube ── */}
       {activeTab === "youtube" && (
-        <s-section heading="Import from YouTube" description="Add YouTube videos or Shorts. Supports single or multiple URLs at once.">
+        <s-section heading="Import from YouTube" description="Add YouTube videos or Shorts. Paste one URL per line to bulk import.">
           <div style={{ display: "flex", gap: "24px" }}>
-
-            {/* Left: form */}
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "16px" }}>
+
               <div style={{ padding: "12px 14px", background: "#f0f7ff", border: "1px solid #b3d4ff", borderRadius: "8px", fontSize: "13px", color: "#0c4a8f" }}>
                 ✅ Supports: <strong>youtube.com/watch?v=</strong> · <strong>youtu.be/</strong> · <strong>youtube.com/shorts/</strong>
               </div>
 
               <div style={fieldGroupStyle}>
-                <label style={labelStyle}>YouTube URL(s) <span style={{ color: "#6d7175", fontWeight: 400 }}>— one per line for bulk import</span></label>
+                <label style={labelStyle}>
+                  YouTube URL(s)
+                  <span style={{ color: "#6d7175", fontWeight: 400, marginLeft: "6px" }}>— one per line for bulk import</span>
+                </label>
                 <textarea
                   value={ytUrls}
                   onChange={e => setYtUrls(e.target.value)}
@@ -157,72 +246,80 @@ export default function VideoImport() {
                   rows={5}
                   style={{ ...inputStyle, resize: "vertical", fontFamily: "monospace", fontSize: "12px" }}
                 />
-                {ytUrlCount > 1 && (
-                  <div style={{ fontSize: "12px", color: "#008060", fontWeight: 600 }}>✓ {ytUrlCount} URLs detected — will import all</div>
+                {ytUrlCount > 0 && (
+                  <div style={{ fontSize: "12px", color: "#008060", fontWeight: 600 }}>
+                    ✓ {ytUrlCount} URL{ytUrlCount > 1 ? "s" : ""} detected
+                  </div>
                 )}
               </div>
 
               <div style={fieldGroupStyle}>
-                <label style={labelStyle}>Title <span style={{ color: "#6d7175", fontWeight: 400 }}>(optional — auto-detected for single URL)</span></label>
-                <input type="text" value={ytTitle} onChange={e => setYtTitle(e.target.value)} placeholder="e.g. Product Demo" style={inputStyle} />
+                <label style={labelStyle}>Custom title <span style={{ color: "#6d7175", fontWeight: 400 }}>(optional)</span></label>
+                <input type="text" value={ytTitle} onChange={e => setYtTitle(e.target.value)} placeholder="e.g. Product Demo" style={{ ...inputStyle, maxWidth: "320px" }} />
               </div>
 
               <div style={rowStyle}>
-                <div><div style={labelStyle}>Auto-publish after import</div><div style={hintStyle}>Make videos live immediately</div></div>
-                <label style={{ cursor: "pointer" }}>
-                  <input type="checkbox" checked={autoPublish} onChange={e => setAutoPublish(e.target.checked)} style={{ display: "none" }} />
-                  <div style={{ ...toggleStyle, background: autoPublish ? "#008060" : "#c9cccf" }}><div style={{ ...toggleDotStyle, transform: autoPublish ? "translateX(20px)" : "translateX(2px)" }} /></div>
-                </label>
+                <div><div style={labelStyle}>Auto-publish after import</div><div style={hintStyle}>Make videos live on store immediately</div></div>
+                <Toggle value={ytAutoPublish} onChange={setYtAutoPublish} />
               </div>
 
               <button
                 onClick={handleYouTubeImport}
                 disabled={!ytUrls.trim() || isSaving}
-                style={{ padding: "11px 24px", background: ytUrls.trim() ? "#dc2626" : "#c9cccf", color: "white", border: "none", borderRadius: "7px", fontSize: "14px", fontWeight: 700, cursor: ytUrls.trim() ? "pointer" : "not-allowed", alignSelf: "flex-start" }}
+                style={{ ...primaryBtn("#dc2626"), opacity: ytUrls.trim() ? 1 : 0.5 }}
               >
                 {isSaving ? "Importing..." : `▶️ Import ${ytUrlCount > 1 ? `${ytUrlCount} Videos` : "Video"}`}
               </button>
             </div>
 
-            {/* Right: preview */}
-            <div style={{ width: "220px", flexShrink: 0 }}>
-              <div style={fieldGroupStyle}>
-                <label style={labelStyle}>Preview</label>
-                <div style={{ borderRadius: "10px", overflow: "hidden", border: "1px solid #e1e3e5", background: "#1a1a2e", aspectRatio: "16/9", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  {ytThumb ? (
-                    <div style={{ position: "relative", width: "100%" }}>
-                      <img src={ytThumb} alt="YouTube thumbnail" style={{ width: "100%", display: "block" }} />
-                      <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", background: "rgba(0,0,0,0.7)", borderRadius: "50%", width: "44px", height: "44px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" }}>▶️</div>
-                    </div>
-                  ) : (
-                    <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)", fontSize: "13px" }}>
-                      <div style={{ fontSize: "32px", marginBottom: "8px" }}>▶️</div>
-                      Paste a URL to preview
-                    </div>
-                  )}
-                </div>
+            {/* Preview */}
+            <div style={{ width: "200px", flexShrink: 0 }}>
+              <label style={{ ...labelStyle, marginBottom: "8px", display: "block" }}>Preview</label>
+              <div style={{ borderRadius: "8px", overflow: "hidden", border: "1px solid #e1e3e5", background: "#1a1a2e", aspectRatio: "16/9", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {ytThumb ? (
+                  <div style={{ position: "relative", width: "100%" }}>
+                    <img src={ytThumb} alt="thumbnail" style={{ width: "100%", display: "block" }} />
+                    <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", background: "rgba(0,0,0,0.7)", borderRadius: "50%", width: "40px", height: "40px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>▶️</div>
+                  </div>
+                ) : (
+                  <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)", fontSize: "12px", padding: "16px" }}>
+                    <div style={{ fontSize: "28px", marginBottom: "6px" }}>▶️</div>
+                    Paste URL to preview
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </s-section>
       )}
 
-      {/* ── Upload Tab ── */}
+      {/* ── Device Upload ── */}
       {activeTab === "upload" && (
-        <s-section heading="Upload from Device" description="Upload MP4 videos directly from your computer or phone.">
+        <s-section heading="Upload from Device" description="Upload MP4 videos directly. Files are stored on Cloudinary CDN.">
           <div style={{ display: "flex", gap: "24px" }}>
-
-            {/* Left: form */}
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "16px" }}>
+
+              {/* Cloudinary not configured warning */}
+              {!cloudinaryConfigured && (
+                <div style={{ padding: "14px 16px", background: "#fbe9e7", border: "1px solid #d72c0d", borderRadius: "8px", fontSize: "13px", color: "#d72c0d" }}>
+                  <strong>⚠️ Cloudinary not configured.</strong> Add these to your Railway environment variables:
+                  <pre style={{ marginTop: "8px", fontSize: "12px", background: "#fff", padding: "8px", borderRadius: "4px", color: "#202223" }}>
+{`CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret`}
+                  </pre>
+                  Get free credentials at <a href="https://cloudinary.com" target="_blank" rel="noreferrer" style={{ color: "#d72c0d" }}>cloudinary.com</a>
+                </div>
+              )}
 
               {/* Drop zone */}
               <div
                 onClick={() => fileInputRef.current?.click()}
                 onDragOver={e => e.preventDefault()}
-                onDrop={e => { e.preventDefault(); const file = e.dataTransfer.files[0]; if (file) { setUploadedFile(file); setPreviewUrl(URL.createObjectURL(file)); setUploadTitle(file.name.replace(/\.[^/.]+$/, "")); }}}
+                onDrop={handleDrop}
                 style={{
                   border: `2px dashed ${uploadedFile ? "#008060" : "#c9cccf"}`,
-                  borderRadius: "10px", padding: "36px", textAlign: "center",
+                  borderRadius: "10px", padding: "40px", textAlign: "center",
                   cursor: "pointer", background: uploadedFile ? "#f1f8f5" : "#fafafa",
                   transition: "all 0.2s",
                 }}
@@ -232,83 +329,85 @@ export default function VideoImport() {
                   <>
                     <div style={{ fontSize: "36px", marginBottom: "8px" }}>✅</div>
                     <div style={{ fontWeight: 700, fontSize: "14px", color: "#202223" }}>{uploadedFile.name}</div>
-                    <div style={{ fontSize: "12px", color: "#6d7175", marginTop: "4px" }}>{(uploadedFile.size / (1024 * 1024)).toFixed(1)} MB · Click to change</div>
+                    <div style={{ fontSize: "12px", color: "#6d7175", marginTop: "4px" }}>
+                      {(uploadedFile.size / (1024 * 1024)).toFixed(1)} MB · Click to change file
+                    </div>
                   </>
                 ) : (
                   <>
-                    <div style={{ fontSize: "36px", marginBottom: "10px" }}>⬆️</div>
-                    <div style={{ fontWeight: 700, fontSize: "14px", color: "#202223", marginBottom: "4px" }}>Click or drag video here</div>
+                    <div style={{ fontSize: "40px", marginBottom: "10px" }}>⬆️</div>
+                    <div style={{ fontWeight: 700, fontSize: "15px", color: "#202223", marginBottom: "4px" }}>Click or drag video here</div>
                     <div style={{ fontSize: "12px", color: "#6d7175" }}>MP4, MOV, AVI, WebM — max 100MB</div>
                   </>
                 )}
               </div>
 
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <div style={{ flex: 1, height: "1px", background: "#e1e3e5" }} />
-                <span style={{ fontSize: "12px", color: "#6d7175" }}>OR</span>
-                <div style={{ flex: 1, height: "1px", background: "#e1e3e5" }} />
-              </div>
-
-              <div style={fieldGroupStyle}>
-                <label style={labelStyle}>Direct video URL (MP4/CDN)</label>
-                <input
-                  type="text"
-                  value={uploadUrl}
-                  onChange={e => { setUploadUrl(e.target.value); setUploadedFile(null); setPreviewUrl(""); }}
-                  placeholder="https://cdn.example.com/video.mp4"
-                  style={inputStyle}
-                  disabled={!!uploadedFile}
-                />
-                <div style={hintStyle}>Host on Cloudinary, AWS S3, or any CDN</div>
-              </div>
-
               <div style={fieldGroupStyle}>
                 <label style={labelStyle}>Video title</label>
-                <input type="text" value={uploadTitle} onChange={e => setUploadTitle(e.target.value)} placeholder="e.g. Summer Collection 2025" style={inputStyle} />
+                <input type="text" value={uploadTitle} onChange={e => setUploadTitle(e.target.value)} placeholder="e.g. Summer Collection 2025" style={{ ...inputStyle, maxWidth: "360px" }} />
               </div>
 
               <div style={rowStyle}>
-                <div><div style={labelStyle}>Auto-publish after upload</div><div style={hintStyle}>Make video live immediately</div></div>
-                <label style={{ cursor: "pointer" }}>
-                  <input type="checkbox" checked={autoPublish} onChange={e => setAutoPublish(e.target.checked)} style={{ display: "none" }} />
-                  <div style={{ ...toggleStyle, background: autoPublish ? "#008060" : "#c9cccf" }}><div style={{ ...toggleDotStyle, transform: autoPublish ? "translateX(20px)" : "translateX(2px)" }} /></div>
-                </label>
+                <div><div style={labelStyle}>Auto-publish after upload</div><div style={hintStyle}>Make video live on store immediately</div></div>
+                <Toggle value={uploadAutoPublish} onChange={setUploadAutoPublish} />
               </div>
 
+              {/* Upload progress */}
+              {uploading && (
+                <div style={fieldGroupStyle}>
+                  <div style={{ fontSize: "13px", fontWeight: 600, color: "#202223", marginBottom: "6px" }}>
+                    Uploading to Cloudinary... {uploadProgress}%
+                  </div>
+                  <div style={{ height: "8px", background: "#e1e3e5", borderRadius: "4px", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${uploadProgress}%`, background: "#5C6AC4", borderRadius: "4px", transition: "width 0.3s ease" }} />
+                  </div>
+                </div>
+              )}
+
+              {uploadError && (
+                <div style={{ padding: "10px 14px", background: "#fbe9e7", border: "1px solid #d72c0d", borderRadius: "7px", fontSize: "13px", color: "#d72c0d" }}>
+                  ❌ {uploadError}
+                </div>
+              )}
+
+              {uploadSuccess && (
+                <div style={{ padding: "10px 14px", background: "#e3f1eb", border: "1px solid #008060", borderRadius: "7px", fontSize: "13px", color: "#008060" }}>
+                  {uploadSuccess}
+                </div>
+              )}
+
               <button
-                onClick={handleUploadImport}
-                disabled={(!uploadUrl.trim() && !uploadedFile) || isSaving}
-                style={{ padding: "11px 24px", background: (uploadUrl.trim() || uploadedFile) ? "#5C6AC4" : "#c9cccf", color: "white", border: "none", borderRadius: "7px", fontSize: "14px", fontWeight: 700, cursor: (uploadUrl.trim() || uploadedFile) ? "pointer" : "not-allowed", alignSelf: "flex-start" }}
+                onClick={handleUpload}
+                disabled={!uploadedFile || uploading}
+                style={{ ...primaryBtn("#5C6AC4"), opacity: uploadedFile && !uploading ? 1 : 0.5 }}
               >
-                {isSaving ? "Uploading..." : "⬆️ Upload Video"}
+                {uploading ? `Uploading ${uploadProgress}%...` : "⬆️ Upload to Cloudinary"}
               </button>
 
               <div style={{ padding: "12px 14px", background: "#fff9f0", border: "1px solid #f4a423", borderRadius: "8px", fontSize: "12px", color: "#b5731d" }}>
-                💡 <strong>Tip:</strong> For best quality use 9:16 vertical MP4 under 30MB. Upload to <a href="https://cloudinary.com" target="_blank" rel="noreferrer" style={{ color: "#b5731d" }}>Cloudinary</a> (free) and paste the URL above.
+                🌐 Videos are uploaded to <strong>Cloudinary CDN</strong> for fast global delivery. Free tier includes 25GB storage and 25GB bandwidth/month.
               </div>
             </div>
 
-            {/* Right: preview */}
-            <div style={{ width: "220px", flexShrink: 0 }}>
-              <div style={fieldGroupStyle}>
-                <label style={labelStyle}>Preview</label>
-                {previewUrl ? (
-                  <video src={previewUrl} controls style={{ width: "100%", borderRadius: "10px", border: "1px solid #e1e3e5" }} />
-                ) : (
-                  <div style={{ borderRadius: "10px", border: "1px solid #e1e3e5", background: "#1a1a2e", aspectRatio: "9/16", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)", fontSize: "13px" }}>
-                      <div style={{ fontSize: "32px", marginBottom: "8px" }}>🎥</div>
-                      Upload to preview
-                    </div>
+            {/* Preview */}
+            <div style={{ width: "200px", flexShrink: 0 }}>
+              <label style={{ ...labelStyle, marginBottom: "8px", display: "block" }}>Preview</label>
+              {previewUrl ? (
+                <video src={previewUrl} controls style={{ width: "100%", borderRadius: "8px", border: "1px solid #e1e3e5" }} />
+              ) : (
+                <div style={{ borderRadius: "8px", border: "1px solid #e1e3e5", background: "#1a1a2e", aspectRatio: "9/16", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)", fontSize: "12px", padding: "16px" }}>
+                    <div style={{ fontSize: "28px", marginBottom: "6px" }}>🎥</div>
+                    Upload to preview
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         </s-section>
       )}
 
-      {/* ── History Tab ── */}
+      {/* ── All Videos ── */}
       {activeTab === "history" && (
         <s-section heading={`All Videos (${recentImports.length})`}>
           {recentImports.length === 0 ? (
@@ -329,7 +428,7 @@ export default function VideoImport() {
                         {v.source === "youtube" ? "▶️" : "🎥"}
                       </div>
                     )}
-                    <span style={{ position: "absolute", top: "6px", left: "6px", fontSize: "10px", fontWeight: 700, padding: "2px 7px", borderRadius: "99px", background: "rgba(0,0,0,0.6)", color: "white", textTransform: "capitalize" }}>
+                    <span style={{ position: "absolute", top: "6px", left: "6px", fontSize: "10px", fontWeight: 700, padding: "2px 7px", borderRadius: "99px", background: "rgba(0,0,0,0.65)", color: "white" }}>
                       {v.source === "youtube" ? "▶️ YouTube" : "⬆️ Upload"}
                     </span>
                     <span style={{ position: "absolute", top: "6px", right: "6px", fontSize: "10px", fontWeight: 700, padding: "2px 7px", borderRadius: "99px", background: v.published ? "#008060" : "#f4a423", color: "white" }}>
@@ -340,9 +439,7 @@ export default function VideoImport() {
                     <div style={{ fontSize: "12px", fontWeight: 600, color: "#202223", marginBottom: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {v.title || "Untitled"}
                     </div>
-                    <div style={{ fontSize: "11px", color: "#6d7175", marginBottom: "8px" }}>
-                      👁 {v.views} · {new Date(v.createdAt).toLocaleDateString("en-IN")}
-                    </div>
+                    <div style={{ fontSize: "11px", color: "#6d7175", marginBottom: "8px" }}>👁 {v.views} · {new Date(v.createdAt).toLocaleDateString("en-IN")}</div>
                     <div style={{ display: "flex", gap: "6px" }}>
                       <button
                         onClick={() => fetcher.submit({ intent: "toggle_publish", videoId: v.id, published: String(v.published) }, { method: "POST" })}
@@ -363,37 +460,55 @@ export default function VideoImport() {
         </s-section>
       )}
 
-      <s-section slot="aside" heading="💡 Tips">
-        <s-paragraph>YouTube Shorts are vertical and mobile-optimized — perfect for product demos.</s-paragraph>
-        <s-paragraph>Paste multiple YouTube URLs at once to bulk import an entire playlist.</s-paragraph>
-        <s-paragraph>For device uploads — host on Cloudinary (free tier) and paste the MP4 URL.</s-paragraph>
-        <s-paragraph>Tag products in videos after importing for the full shoppable experience.</s-paragraph>
+      <s-section slot="aside" heading="☁️ Storage">
+        <div style={{ fontSize: "13px", color: "#6d7175", lineHeight: 1.6 }}>
+          Videos are stored on <strong style={{ color: "#202223" }}>Cloudinary CDN</strong> — fast global delivery with auto-compression.
+        </div>
+        <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "6px" }}>
+          {[
+            { label: "Max file size", value: "100 MB" },
+            { label: "Formats", value: "MP4, MOV, AVI, WebM" },
+            { label: "Free storage", value: "25 GB" },
+            { label: "Free bandwidth", value: "25 GB/month" },
+          ].map(s => (
+            <div key={s.label} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #f1f1f1", fontSize: "12px" }}>
+              <span style={{ color: "#6d7175" }}>{s.label}</span>
+              <span style={{ fontWeight: 600, color: "#202223" }}>{s.value}</span>
+            </div>
+          ))}
+        </div>
+        <a href="https://cloudinary.com/users/register/free" target="_blank" rel="noreferrer" style={{ display: "block", marginTop: "12px", padding: "9px", background: "#5C6AC4", color: "white", borderRadius: "7px", textAlign: "center", textDecoration: "none", fontSize: "13px", fontWeight: 600 }}>
+          Get Free Cloudinary Account →
+        </a>
       </s-section>
 
-      <s-section slot="aside" heading="📊 Stats">
-        {[
-          { label: "Total", value: recentImports.length },
-          { label: "Published", value: recentImports.filter(v => v.published).length },
-          { label: "Draft", value: recentImports.filter(v => !v.published).length },
-          { label: "YouTube", value: recentImports.filter(v => v.source === "youtube").length },
-          { label: "Uploaded", value: recentImports.filter(v => v.source === "upload").length },
-        ].map(s => (
-          <div key={s.label} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #f1f1f1", fontSize: "13px" }}>
-            <span style={{ color: "#6d7175" }}>{s.label}</span>
-            <span style={{ fontWeight: 600 }}>{s.value}</span>
-          </div>
-        ))}
+      <s-section slot="aside" heading="💡 Tips">
+        <s-paragraph>YouTube Shorts are vertical and mobile-optimized — perfect for product demos.</s-paragraph>
+        <s-paragraph>Use 9:16 aspect ratio for best display on product pages.</s-paragraph>
+        <s-paragraph>Keep videos under 60 seconds for highest watch completion rate.</s-paragraph>
+        <s-paragraph>Tag products in videos after importing for the full shoppable experience.</s-paragraph>
       </s-section>
     </s-page>
   );
 }
 
+// ── Reusable toggle component ─────────────────────────────────────────────────
+function Toggle({ value, onChange }) {
+  return (
+    <label style={{ cursor: "pointer" }}>
+      <input type="checkbox" checked={value} onChange={e => onChange(e.target.checked)} style={{ display: "none" }} />
+      <div style={{ width: "44px", height: "24px", borderRadius: "99px", position: "relative", background: value ? "#008060" : "#c9cccf", transition: "background 0.2s" }}>
+        <div style={{ position: "absolute", top: "2px", width: "20px", height: "20px", borderRadius: "50%", background: "white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "transform 0.2s", transform: value ? "translateX(20px)" : "translateX(2px)" }} />
+      </div>
+    </label>
+  );
+}
+
 const inputStyle = { width: "100%", padding: "8px 10px", borderRadius: "6px", border: "1px solid #c9cccf", fontSize: "13px", outline: "none", boxSizing: "border-box", background: "white" };
 const fieldGroupStyle = { display: "flex", flexDirection: "column", gap: "4px" };
-const labelStyle = { fontSize: "13px", fontWeight: "600", color: "#202223", display: "block" };
+const labelStyle = { fontSize: "13px", fontWeight: "600", color: "#202223" };
 const hintStyle = { fontSize: "12px", color: "#6d7175" };
 const rowStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px", background: "#f6f6f7", borderRadius: "8px" };
-const toggleStyle = { width: "44px", height: "24px", borderRadius: "99px", position: "relative", transition: "background 0.2s", cursor: "pointer" };
-const toggleDotStyle = { position: "absolute", top: "2px", width: "20px", height: "20px", borderRadius: "50%", background: "white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "transform 0.2s" };
+const primaryBtn = (bg) => ({ padding: "10px 24px", background: bg, color: "white", border: "none", borderRadius: "7px", fontSize: "13px", fontWeight: 700, cursor: "pointer", alignSelf: "flex-start" });
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);
