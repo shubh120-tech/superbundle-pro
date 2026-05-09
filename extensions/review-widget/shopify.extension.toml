@@ -1,0 +1,52 @@
+api_version = "2026-04"
+
+[[extensions]]
+name = "review-widget"
+handle = "review-widget"
+type = "ui_extension"
+uid = "35b372b8-e5d7-81eb-c3d7-dea12634b8c97c864dfc"
+
+[[extensions.targeting]]
+module = "./src/Checkout.jsx"
+target = "purchase.thank-you.block.render"
+
+[extensions.capabilities]
+api_access = true
+
+[extensions.settings]
+
+[[extensions.settings.fields]]
+key = "showReviews"
+type = "boolean"
+name = "Show product reviews"
+description = "Display reviews on the thank you page"
+
+[[extensions.settings.fields]]
+key = "maxReviews"
+type = "number_integer"
+name = "Max reviews to show"
+description = "Number of reviews to display (default: 3)"
+
+[[extensions.settings.fields]]
+key = "primaryColor"
+type = "single_line_text_field"
+name = "Primary color"
+description = "Hex color for stars and accents (e.g. #5C6AC4)"
+
+[[extensions.settings.fields]]
+key = "reviewsHeading"
+type = "single_line_text_field"
+name = "Reviews heading"
+description = "Heading text above reviews section"
+
+[[extensions.settings.fields]]
+key = "ctaText"
+type = "single_line_text_field"
+name = "Leave review CTA text"
+description = "Button text to encourage leaving a review"
+
+[[extensions.settings.fields]]
+key = "showWriteReview"
+type = "boolean"
+name = "Show write review button"
+description = "Show a button to encourage customers to leave a review"

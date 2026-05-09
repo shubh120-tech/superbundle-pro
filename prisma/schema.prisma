@@ -1,0 +1,367 @@
+// prisma/schema.prisma
+// SuperBundle Pro — Complete Database Schema
+// Tools: 1. Product Reviews  2. Smart Cart  3. Shoppable Videos
+//
+// Local dev:  switch to SQLite datasource below
+// Production: use PostgreSQL (Railway/Supabase/Neon)
+//
+// After replacing run:
+//   npx prisma migrate dev --name init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ── LOCAL DEV (SQLite) ────────────────────────────────────────────────────────
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+// ── PRODUCTION (PostgreSQL) — uncomment for Railway ───────────────────────────
+// datasource db {
+//   provider = "postgresql"
+//   url      = env("DATABASE_URL")
+// }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHOPIFY REQUIRED
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// APP CORE
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AppSettings {
+  id          Int      @id @default(autoincrement())
+  shop        String   @unique
+  storeName   String   @default("")
+  currency    String   @default("INR")
+  timezone    String   @default("Asia/Kolkata")
+  plan        String   @default("free")           // "free" | "starter" | "pro" | "enterprise"
+  isActive    Boolean  @default(true)
+  installedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("app_settings")
+}
+
+// Tool enable/disable toggles per shop
+model ToolSettings {
+  id                Int      @id @default(autoincrement())
+  shop              String   @unique
+  reviewsEnabled    Boolean  @default(true)
+  smartCartEnabled  Boolean  @default(true)
+  videosEnabled     Boolean  @default(true)
+  updatedAt         DateTime @updatedAt
+
+  @@map("tool_settings")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOOL 1 — PRODUCT REVIEWS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ReviewSettings {
+  id                        Int      @id @default(autoincrement())
+  shop                      String   @unique
+
+  // Collection
+  autoRequestEnabled        Boolean  @default(true)
+  requestDelay              Int      @default(7)              // days after fulfillment
+  requestSubject            String   @default("How was your order? Leave a review!")
+  requestBody               String   @default("We'd love to hear your feedback.")
+  reminderEnabled           Boolean  @default(true)
+  reminderDelay             Int      @default(14)             // days after first request
+  allowPhotoReviews         Boolean  @default(true)
+  allowVideoReviews         Boolean  @default(false)          // paid feature
+  incentiveEnabled          Boolean  @default(false)
+  incentiveType             String   @default("discount")     // "discount" | "points"
+  incentiveValue            Float    @default(10)             // % or flat
+
+  // Display
+  widgetTheme               String   @default("light")        // "light" | "dark" | "custom"
+  primaryColor              String   @default("#5C6AC4")
+  showStarRating            Boolean  @default(true)
+  showReviewCount           Boolean  @default(true)
+  showVerifiedBadge         Boolean  @default(true)
+  showPhotos                Boolean  @default(true)
+  reviewsPerPage            Int      @default(10)
+  sortDefault               String   @default("recent")       // "recent" | "highest" | "lowest" | "helpful"
+
+  // SEO
+  seoSnippetsEnabled        Boolean  @default(true)
+  googleShoppingEnabled     Boolean  @default(false)
+
+  // Social
+  autoShareFacebook         Boolean  @default(false)
+  autoShareInstagram        Boolean  @default(false)
+  autoShareTiktok           Boolean  @default(false)
+
+  // Q&A
+  qaEnabled                 Boolean  @default(false)
+
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@map("review_settings")
+}
+
+model Review {
+  id              Int      @id @default(autoincrement())
+  shop            String
+  productId       String
+  productTitle    String   @default("")
+  orderId         String?
+  customerName    String
+  customerEmail   String
+  rating          Int                                         // 1-5
+  title           String   @default("")
+  body            String   @default("")
+  photoUrls       String   @default("[]")                    // JSON array
+  videoUrl        String?
+  verified        Boolean  @default(false)
+  published       Boolean  @default(false)
+  helpful         Int      @default(0)
+  notHelpful      Int      @default(0)
+  reply           String?
+  repliedAt       DateTime?
+  source          String   @default("email")                 // "email" | "import" | "manual"
+  importSource    String?                                     // "amazon" | "aliexpress" | "csv"
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([shop])
+  @@index([shop, productId])
+  @@index([shop, published])
+  @@map("reviews")
+}
+
+model ReviewRequest {
+  id          Int       @id @default(autoincrement())
+  shop        String
+  orderId     String
+  customerId  String?
+  email       String
+  productIds  String                                          // JSON array
+  sentAt      DateTime?
+  reminderAt  DateTime?
+  status      String    @default("pending")                  // "pending" | "sent" | "reminded" | "completed"
+  createdAt   DateTime  @default(now())
+
+  @@index([shop])
+  @@index([shop, orderId])
+  @@map("review_requests")
+}
+
+model ReviewQA {
+  id          Int      @id @default(autoincrement())
+  shop        String
+  productId   String
+  question    String
+  askedBy     String
+  answer      String?
+  answeredAt  DateTime?
+  published   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([shop, productId])
+  @@map("review_qa")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOOL 2 — SMART CART
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SmartCartSettings {
+  id                        Int      @id @default(autoincrement())
+  shop                      String   @unique
+
+  // Cart Drawer
+  cartDrawerEnabled         Boolean  @default(true)
+  drawerPosition            String   @default("right")       // "right" | "left"
+  primaryColor              String   @default("#008060")
+  accentColor               String   @default("#5C6AC4")
+  cartTitle                 String   @default("Your Cart")
+  showCartCount             Boolean  @default(true)
+
+  // Free Shipping Bar
+  freeShippingEnabled       Boolean  @default(true)
+  freeShippingThreshold     Float    @default(499)
+  freeShippingMessage       String   @default("Add {amount} more for FREE shipping 🚚")
+  freeShippingSuccessMsg    String   @default("🎉 You unlocked FREE shipping!")
+
+  // Milestone Rewards
+  milestonesEnabled         Boolean  @default(true)
+  milestones                String   @default("[]")          // JSON array
+
+  // Upsell
+  upsellEnabled             Boolean  @default(true)
+  upsellTitle               String   @default("You might also like")
+  upsellMaxProducts         Int      @default(3)
+  upsellProductIds          String   @default("[]")          // JSON array of variant IDs
+
+  // Freebie Selector
+  freebieEnabled            Boolean  @default(false)
+  freebieThreshold          Float    @default(999)
+  freebieProductIds         String   @default("[]")          // JSON array
+
+  // Smart Discount
+  discountEnabled           Boolean  @default(false)
+  discountCodes             String   @default("[]")          // JSON array {code, label, value}
+
+  // Announcement Banner
+  announcementEnabled       Boolean  @default(false)
+  announcementText          String   @default("")
+  announcementColor         String   @default("#008060")
+
+  // COD / Prepaid
+  prepaidNudgeEnabled       Boolean  @default(true)
+  prepaidDiscount           Float    @default(50)
+  prepaidDiscountType       String   @default("flat")        // "flat" | "percent"
+  codRestrictionEnabled     Boolean  @default(false)
+  codMinOrderValue          Float    @default(0)
+  codMaxOrderValue          Float    @default(10000)
+
+  // Trust Badges
+  trustBadgesEnabled        Boolean  @default(true)
+  trustBadges               String   @default("[]")          // JSON array
+
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@map("smart_cart_settings")
+}
+
+model CartEvent {
+  id        Int      @id @default(autoincrement())
+  shop      String
+  event     String                                            // "upsell_added" | "freebie_selected" | "discount_applied" | "milestone_unlocked" | "prepaid_switched"
+  value     Float?
+  metadata  String   @default("{}")                          // JSON
+  createdAt DateTime @default(now())
+
+  @@index([shop])
+  @@index([shop, event])
+  @@map("cart_events")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOOL 3 — SHOPPABLE VIDEOS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model VideoSettings {
+  id                    Int      @id @default(autoincrement())
+  shop                  String   @unique
+
+  // General
+  autoplayEnabled       Boolean  @default(true)
+  muteByDefault         Boolean  @default(true)
+  showProductTags       Boolean  @default(true)
+  showAddToCart         Boolean  @default(true)
+
+  // Widget Styles
+  defaultWidgetType     String   @default("carousel")        // "carousel" | "story" | "grid" | "floating"
+  primaryColor          String   @default("#5C6AC4")
+  borderRadius          Int      @default(8)
+  aspectRatio           String   @default("9:16")            // "9:16" | "1:1" | "16:9"
+
+  // Performance
+  lazyLoadEnabled       Boolean  @default(true)
+  compressionEnabled    Boolean  @default(true)
+  cdnEnabled            Boolean  @default(true)
+
+  // Social imports
+  tiktokConnected       Boolean  @default(false)
+  tiktokHandle          String   @default("")
+  instagramConnected    Boolean  @default(false)
+  instagramHandle       String   @default("")
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("video_settings")
+}
+
+model Video {
+  id              Int      @id @default(autoincrement())
+  shop            String
+  title           String   @default("")
+  description     String   @default("")
+  videoUrl        String                                      // CDN/hosted URL
+  thumbnailUrl    String   @default("")
+  source          String   @default("upload")                // "upload" | "tiktok" | "instagram" | "youtube"
+  sourceId        String?                                     // original social media ID
+  productIds      String   @default("[]")                    // JSON array of tagged product IDs
+  widgetType      String   @default("carousel")
+  published       Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  views           Int      @default(0)
+  clicks          Int      @default(0)
+  addToCarts      Int      @default(0)
+  conversions     Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([shop])
+  @@index([shop, published])
+  @@map("videos")
+}
+
+model VideoWidget {
+  id            Int      @id @default(autoincrement())
+  shop          String
+  name          String
+  widgetType    String   @default("carousel")                // "carousel" | "story" | "grid" | "floating"
+  placement     String   @default("product_page")            // "product_page" | "homepage" | "collection" | "cart"
+  videoIds      String   @default("[]")                      // JSON array
+  title         String   @default("")
+  maxVideos     Int      @default(10)
+  autoplay      Boolean  @default(true)
+  published     Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([shop])
+  @@map("video_widgets")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ANALYTICS (unified across all tools)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AnalyticsEvent {
+  id        Int      @id @default(autoincrement())
+  shop      String
+  tool      String                                            // "reviews" | "smart_cart" | "videos"
+  event     String
+  value     Float?
+  metadata  String   @default("{}")
+  createdAt DateTime @default(now())
+
+  @@index([shop])
+  @@index([shop, tool])
+  @@index([shop, event])
+  @@index([createdAt])
+  @@map("analytics_events")
+}

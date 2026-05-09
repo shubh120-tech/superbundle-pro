@@ -1,0 +1,35 @@
+# SuperBundle Pro — Shopify App Config
+# https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "0f1a14c98766357d0bbad75928fea068"
+application_url = "https://your-app.railway.app"
+embedded = true
+name = "SuperBundle Pro"
+
+[access_scopes]
+scopes = "write_products,read_products,read_orders,write_orders,read_customers,write_customers,read_metaobjects,write_metaobjects"
+
+[webhooks]
+api_version = "2026-04"
+
+  # ── App lifecycle ─────────────────────────────────────────────────────────
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+
+[app_proxy]
+url = "https://your-app.railway.app/apps/proxy"
+subpath = "superbundle-pro"
+prefix = "apps"
+
+[auth]
+redirect_urls = [ "https://your-app.railway.app/api/auth" ]
+
+[build]
+include_config_on_deploy = true
+automatically_update_urls_on_dev = true

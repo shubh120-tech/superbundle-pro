@@ -1,0 +1,7 @@
+api_version = "2026-04"
+
+[[extensions]]
+name = "product-blocks"
+handle = "product-blocks"
+type = "theme"
+uid = "37b95d10-e683-67cb-94a0-85e01dcb4b00c881feb8"

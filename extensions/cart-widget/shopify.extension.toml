@@ -1,0 +1,76 @@
+api_version = "2026-04"
+
+[[extensions]]
+name = "cart-widget"
+handle = "cart-widget"
+type = "ui_extension"
+uid = "65d638af-8dcc-dac9-e2b9-993a8ae2fe2ca14b7a74"
+
+[[extensions.targeting]]
+module = "./src/Checkout.jsx"
+target = "purchase.thank-you.block.render"
+
+[extensions.capabilities]
+api_access = true
+
+[extensions.settings]
+
+[[extensions.settings.fields]]
+key = "freeShippingEnabled"
+type = "boolean"
+name = "Enable free shipping bar"
+description = "Show progress toward free shipping threshold"
+
+[[extensions.settings.fields]]
+key = "freeShippingThreshold"
+type = "number_decimal"
+name = "Free shipping threshold"
+description = "Cart value needed to unlock free shipping (e.g. 499)"
+
+[[extensions.settings.fields]]
+key = "freeShippingMessage"
+type = "single_line_text_field"
+name = "Free shipping message"
+description = "Use {amount} as placeholder"
+
+[[extensions.settings.fields]]
+key = "freeShippingSuccessMessage"
+type = "single_line_text_field"
+name = "Free shipping success message"
+description = "Shown when free shipping is unlocked"
+
+[[extensions.settings.fields]]
+key = "milestonesEnabled"
+type = "boolean"
+name = "Enable milestone rewards"
+description = "Show reward unlocks as customer adds to cart"
+
+[[extensions.settings.fields]]
+key = "milestones"
+type = "single_line_text_field"
+name = "Milestones (JSON)"
+description = "JSON array of milestone objects"
+
+[[extensions.settings.fields]]
+key = "prepaidNudgeEnabled"
+type = "boolean"
+name = "Enable prepaid nudge"
+description = "Encourage customers to switch from COD to prepaid"
+
+[[extensions.settings.fields]]
+key = "prepaidDiscount"
+type = "number_decimal"
+name = "Prepaid discount amount"
+description = "Discount offered for switching to prepaid"
+
+[[extensions.settings.fields]]
+key = "prepaidDiscountType"
+type = "single_line_text_field"
+name = "Prepaid discount type"
+description = "flat or percent"
+
+[[extensions.settings.fields]]
+key = "trustBadgesEnabled"
+type = "boolean"
+name = "Enable trust badges"
+description = "Show secure checkout and return policy badges"

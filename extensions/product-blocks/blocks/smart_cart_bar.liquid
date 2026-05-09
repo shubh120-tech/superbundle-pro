@@ -1,0 +1,278 @@
+{% comment %}
+  SuperBundle Pro — Smart Cart Bar Block
+  Shows free shipping progress + milestone rewards on product page
+  Add via Theme Editor → Product page → Add block → Apps → Smart Cart Bar
+{% endcomment %}
+
+{%- assign sbp_threshold = block.settings.free_shipping_threshold | default: 499 -%}
+{%- assign sbp_milestones = block.settings.milestones | default: '[]' -%}
+{%- assign sbp_free_msg = block.settings.free_shipping_message | default: 'Add more for FREE shipping' -%}
+{%- assign sbp_success_msg = block.settings.free_shipping_success | default: 'You unlocked FREE shipping!' -%}
+{%- assign sbp_currency = shop.currency -%}
+{%- assign sbp_primary = block.settings.primary_color | default: '#008060' -%}
+{%- assign sbp_ann_color = block.settings.announcement_color | default: '#5C6AC4' -%}
+{%- assign sbp_radius = block.settings.border_radius | default: 8 -%}
+<div
+  class="superbundle-cart-bar"
+  id="sbp-cart-bar"
+  data-threshold="{{ sbp_threshold }}"
+  data-currency="{{ sbp_currency }}"
+>
+
+  {%- if block.settings.show_free_shipping -%}
+  <!-- Free Shipping Bar -->
+  <div class="sbp-shipping-bar" id="sbp-shipping-bar">
+    <div class="sbp-bar-message" id="sbp-bar-message">
+      🚚 {{ block.settings.free_shipping_message }}
+    </div>
+    <div class="sbp-progress-track">
+      <div class="sbp-progress-fill" id="sbp-progress-fill" style="width: 0%; background-color: {{ sbp_primary }};"></div>
+    </div>
+  </div>
+  {%- endif -%}
+
+  {%- if block.settings.show_milestones -%}
+  <!-- Milestone Rewards -->
+  <div class="sbp-milestones" id="sbp-milestones">
+    
+    <div class="sbp-milestones-track" id="sbp-milestones-track">
+      <!-- Populated by JS -->
+    </div>
+  </div>
+  {%- endif -%}
+
+  {%- if block.settings.announcement_text != blank -%}
+  <!-- Announcement Banner -->
+  <div
+    class="sbp-announcement"
+    style="background-color: {{ sbp_ann_color }};"
+  >
+    {{ block.settings.announcement_text }}
+  </div>
+  {%- endif -%}
+
+</div>
+
+<style>
+  .superbundle-cart-bar {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    border: 1px solid #e1e3e5;
+    border-radius: {{ sbp_radius }}px;
+    overflow: hidden;
+    margin: {{ block.settings.margin_top | default: 16 }}px 0 {{ block.settings.margin_bottom | default: 16 }}px;
+  }
+  .sbp-shipping-bar {
+    padding: 12px 16px;
+    background: #f9f9f9;
+  }
+  .sbp-bar-message {
+    font-size: 13px; font-weight: 600; color: #202223;
+    margin-bottom: 8px;
+  }
+  .sbp-progress-track {
+    height: 8px; background: #e1e3e5;
+    border-radius: 4px; overflow: hidden;
+  }
+  .sbp-progress-fill {
+    height: 100%; border-radius: 4px;
+    transition: width 0.5s ease;
+  }
+  .sbp-milestones { padding: 12px 16px; background: white; }
+  .sbp-milestones-track { display: flex; gap: 8px; flex-wrap: wrap; }
+  .sbp-milestone-item {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 10px; border-radius: 99px;
+    font-size: 12px; font-weight: 600;
+    border: 1px solid #e1e3e5;
+  }
+  .sbp-milestone-item.unlocked {
+    background: #e3f1eb; color: #008060; border-color: #008060;
+  }
+  .sbp-milestone-item.locked {
+    background: #f6f6f7; color: #6d7175;
+  }
+  .sbp-announcement {
+    padding: 10px 16px; color: white;
+    font-size: 13px; font-weight: 600; text-align: center;
+  }
+</style>
+
+<script>
+(function() {
+  var threshold = parseFloat('{{ sbp_threshold }}');
+  var currency = '{{ shop.currency }}';
+  var freeMsg = {{ sbp_free_msg | json }};
+  var successMsg = {{ sbp_success_msg | json }};
+  var milestonesJson = {{ sbp_milestones | json }};
+
+  var milestones = [];
+  try { milestones = JSON.parse(milestonesJson); } catch(e) {}
+
+  function formatCurrency(amount) {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency', currency: currency, maximumFractionDigits: 0
+    }).format(amount);
+  }
+
+  function updateBar(cartTotal) {
+    var fillEl = document.getElementById('sbp-progress-fill');
+    var msgEl = document.getElementById('sbp-bar-message');
+
+    if (!fillEl || !msgEl) return;
+
+    var remaining = Math.max(0, threshold - cartTotal);
+    var progress = Math.min(100, Math.round((cartTotal / threshold) * 100));
+    var isUnlocked = remaining === 0;
+
+    fillEl.style.width = progress + '%';
+
+    if (isUnlocked) {
+      msgEl.textContent = successMsg;
+      fillEl.style.background = '#008060';
+    } else {
+      msgEl.textContent = freeMsg.replace('{amount}', formatCurrency(remaining));
+    }
+  }
+
+  function updateMilestones(cartTotal) {
+    var track = document.getElementById('sbp-milestones-track');
+    if (!track || milestones.length === 0) return;
+
+    track.innerHTML = milestones.map(function(m) {
+      var unlocked = cartTotal >= m.threshold;
+      return '<div class="sbp-milestone-item ' + (unlocked ? 'unlocked' : 'locked') + '">' +
+        (unlocked ? '✅' : '🔒') + ' ' + m.reward +
+        (!unlocked ? ' at ' + formatCurrency(m.threshold) : '') +
+      '</div>';
+    }).join('');
+  }
+
+  function getCartAndUpdate() {
+    fetch('/cart.js')
+      .then(function(r) { return r.json(); })
+      .then(function(cart) {
+        var total = cart.total_price / 100;
+        updateBar(total);
+        updateMilestones(total);
+      })
+      .catch(function() {});
+  }
+
+  // Init
+  getCartAndUpdate();
+
+  // Listen for cart updates (Shopify cart change event)
+  document.addEventListener('cart:updated', getCartAndUpdate);
+
+  // Also poll every 2s as fallback
+  setInterval(getCartAndUpdate, 2000);
+})();
+</script>
+
+{% schema %}
+{
+  "name": "Smart Cart Bar",
+  "target": "section",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Free Shipping Bar"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_free_shipping",
+      "label": "Show free shipping bar",
+      "default": true
+    },
+    {
+      "type": "number",
+      "id": "free_shipping_threshold",
+      "label": "Free shipping threshold (₹)",
+      "default": 499
+    },
+    {
+      "type": "text",
+      "id": "free_shipping_message",
+      "label": "Progress message",
+      "default": "Add {amount} more for FREE shipping! 🚚",
+      "info": "Use {amount} as placeholder"
+    },
+    {
+      "type": "text",
+      "id": "free_shipping_success",
+      "label": "Success message",
+      "default": "🎉 You have FREE shipping!"
+    },
+    {
+      "type": "header",
+      "content": "Milestone Rewards"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_milestones",
+      "label": "Show milestone rewards",
+      "default": true
+    },
+    {
+      "type": "textarea",
+      "id": "milestones",
+      "label": "Milestones (JSON)",
+      "default": "[{\"threshold\":500,\"reward\":\"Free Gift 🎁\"},{\"threshold\":999,\"reward\":\"10% OFF 🏷️\"},{\"threshold\":1999,\"reward\":\"Express Shipping ⚡\"}]",
+      "info": "JSON array with threshold and reward fields"
+    },
+    {
+      "type": "header",
+      "content": "Announcement Banner"
+    },
+    {
+      "type": "text",
+      "id": "announcement_text",
+      "label": "Announcement text",
+      "default": "🎉 Special offer — limited time only!"
+    },
+    {
+      "type": "color",
+      "id": "announcement_color",
+      "label": "Announcement background color",
+      "default": "#5C6AC4"
+    },
+    {
+      "type": "header",
+      "content": "Style"
+    },
+    {
+      "type": "color",
+      "id": "primary_color",
+      "label": "Primary color",
+      "default": "#008060"
+    },
+    {
+      "type": "range",
+      "id": "border_radius",
+      "label": "Border radius",
+      "min": 0,
+      "max": 20,
+      "step": 2,
+      "default": 8
+    },
+    {
+      "type": "range",
+      "id": "margin_top",
+      "label": "Margin top",
+      "min": 0,
+      "max": 40,
+      "step": 4,
+      "default": 16
+    },
+    {
+      "type": "range",
+      "id": "margin_bottom",
+      "label": "Margin bottom",
+      "min": 0,
+      "max": 40,
+      "step": 4,
+      "default": 16
+    }
+  ]
+}
+{% endschema %}

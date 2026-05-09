@@ -1,0 +1,290 @@
+{% comment %}
+  SuperBundle Pro — Shoppable Videos Block
+  Add to product page via Theme Editor → Add block → Apps → Product Videos
+{% endcomment %}
+
+{% assign product_id = product.id %}
+{% assign shop_domain = shop.permanent_domain %}
+
+<div
+  class="superbundle-videos-block"
+  data-product-id="{{ product_id }}"
+  id="sbp-videos-{{ product_id }}"
+>
+
+  {%- if block.settings.heading != blank -%}
+  <h3 class="sbp-videos-heading">{{ block.settings.heading }}</h3>
+  {%- endif -%}
+
+  <!-- Video Container -->
+  <div
+    class="sbp-videos-container sbp-widget-{{ block.settings.widget_type | default: 'carousel' }}"
+    id="sbp-videos-container-{{ product_id }}"
+  >
+    <div class="sbp-videos-loading">Loading videos...</div>
+  </div>
+
+  <!-- Lightbox -->
+  <div class="sbp-lightbox" id="sbp-lightbox-{{ product_id }}" onclick="sbpCloseLightbox('{{ product_id }}')">
+    <div class="sbp-lightbox-inner" onclick="event.stopPropagation()">
+      <button class="sbp-lightbox-close" onclick="sbpCloseLightbox('{{ product_id }}')">✕</button>
+      <video
+        id="sbp-lightbox-video-{{ product_id }}"
+        controls
+        autoplay
+        style="max-width:100%;max-height:80vh;border-radius:8px;"
+      ></video>
+      <div class="sbp-lightbox-product" id="sbp-lightbox-product-{{ product_id }}"></div>
+    </div>
+  </div>
+
+</div>
+
+<style>
+  .superbundle-videos-block {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    padding: {{ block.settings.padding_top | default: 24 }}px 0 {{ block.settings.padding_bottom | default: 24 }}px;
+  }
+  .sbp-videos-heading {
+    font-size: 20px; font-weight: 700; color: #202223;
+    margin: 0 0 16px;
+  }
+  .sbp-videos-loading { color: #6d7175; font-size: 14px; padding: 20px 0; }
+  .sbp-videos-empty { text-align: center; padding: 32px; color: #6d7175; font-size: 14px; }
+
+  /* Carousel layout */
+  .sbp-widget-carousel .sbp-videos-grid {
+    display: flex; gap: 12px; overflow-x: auto;
+    scroll-snap-type: x mandatory; padding-bottom: 8px;
+    scrollbar-width: thin;
+  }
+  .sbp-widget-carousel .sbp-video-card { flex: 0 0 160px; }
+
+  /* Grid layout */
+  .sbp-widget-grid .sbp-videos-grid {
+    display: grid;
+    grid-template-columns: repeat({{ block.settings.columns | default: 3 }}, 1fr);
+    gap: 12px;
+  }
+
+  /* Story layout */
+  .sbp-widget-story .sbp-videos-grid {
+    display: flex; gap: 10px; overflow-x: auto;
+    padding-bottom: 8px;
+  }
+  .sbp-widget-story .sbp-video-card { flex: 0 0 100px; }
+  .sbp-widget-story .sbp-video-thumb { border-radius: 50%; border: 3px solid {{ block.settings.primary_color | default: '#5C6AC4' }}; }
+
+  /* Video card */
+  .sbp-video-card { cursor: pointer; }
+  .sbp-video-thumb-wrap {
+    position: relative; padding-top: 177%;
+    background: #1a1a2e; border-radius: {{ block.settings.border_radius | default: 8 }}px;
+    overflow: hidden; scroll-snap-align: start;
+  }
+  .sbp-video-thumb {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%; object-fit: cover;
+  }
+  .sbp-play-btn {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 44px; height: 44px; border-radius: 50%;
+    background: rgba(255,255,255,0.9);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; transition: transform 0.2s;
+  }
+  .sbp-video-card:hover .sbp-play-btn { transform: translate(-50%, -50%) scale(1.1); }
+  .sbp-video-stats {
+    position: absolute; bottom: 6px; left: 6px;
+    display: flex; gap: 6px;
+  }
+  .sbp-stat-badge {
+    font-size: 10px; color: white;
+    background: rgba(0,0,0,0.5); padding: 2px 6px; border-radius: 4px;
+  }
+  .sbp-product-tag {
+    position: absolute; top: 8px; right: 8px;
+    background: {{ block.settings.primary_color | default: '#5C6AC4' }};
+    color: white; font-size: 10px; font-weight: 600;
+    padding: 3px 8px; border-radius: 99px;
+  }
+  .sbp-video-title {
+    font-size: 12px; color: #202223; font-weight: 600;
+    margin-top: 6px; overflow: hidden;
+    white-space: nowrap; text-overflow: ellipsis;
+  }
+
+  /* Lightbox */
+  .sbp-lightbox {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.85); z-index: 99999;
+    align-items: center; justify-content: center;
+  }
+  .sbp-lightbox.active { display: flex; }
+  .sbp-lightbox-inner {
+    position: relative; padding: 20px;
+    max-width: 90vw; max-height: 90vh;
+  }
+  .sbp-lightbox-close {
+    position: absolute; top: 0; right: 0;
+    background: white; border: none; border-radius: 50%;
+    width: 32px; height: 32px; font-size: 14px;
+    cursor: pointer; font-weight: 700;
+  }
+  .sbp-lightbox-product {
+    color: white; text-align: center; margin-top: 12px; font-size: 14px;
+  }
+  .sbp-atc-btn {
+    display: inline-block; margin-top: 8px;
+    padding: 10px 24px; border-radius: 6px; border: none;
+    background: {{ block.settings.primary_color | default: '#5C6AC4' }};
+    color: white; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+</style>
+
+<script>
+(function() {
+  var productId = "{{ product_id }}";
+
+  function loadVideos() {
+    var container = document.getElementById('sbp-videos-container-' + productId);
+    var shopDomain = '{{ shop.permanent_domain }}';
+    var apiUrl = '/apps/superbundle-pro?_path=videos&product_id=gid://shopify/Product/' + productId + '&shop=' + shopDomain;
+
+    fetch(apiUrl)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!data.videos || data.videos.length === 0) {
+          container.innerHTML = '<div class="sbp-videos-empty">No videos available for this product.</div>';
+          return;
+        }
+
+        var html = '<div class="sbp-videos-grid">' +
+          data.videos.map(function(video) {
+            var productIds = JSON.parse(video.productIds || '[]');
+            var hasProduct = productIds.length > 0;
+            return '<div class="sbp-video-card" onclick="sbpOpenVideo(\'' + productId + '\', \'' + (video.videoUrl || '') + '\', \'' + (video.title || '') + '\', \'' + (hasProduct ? video.productIds : '') + '\')">' +
+              '<div class="sbp-video-thumb-wrap">' +
+                (video.thumbnailUrl ? '<img class="sbp-video-thumb" src="' + video.thumbnailUrl + '" alt="' + (video.title || 'Video') + '" />' : '') +
+                '<div class="sbp-play-btn">▶</div>' +
+                (hasProduct ? '<div class="sbp-product-tag">🛍️ Shop</div>' : '') +
+                '<div class="sbp-video-stats">' +
+                  '<span class="sbp-stat-badge">👁 ' + (video.views || 0) + '</span>' +
+                '</div>' +
+              '</div>' +
+              (video.title ? '<div class="sbp-video-title">' + video.title + '</div>' : '') +
+            '</div>';
+          }).join('') +
+        '</div>';
+
+        container.innerHTML = html;
+      })
+      .catch(function() {
+        container.innerHTML = '<div class="sbp-videos-empty">Videos unavailable right now.</div>';
+      });
+  }
+
+  window.sbpOpenVideo = function(pid, url, title, productIdsJson) {
+    var lightbox = document.getElementById('sbp-lightbox-' + pid);
+    var video = document.getElementById('sbp-lightbox-video-' + pid);
+    var productDiv = document.getElementById('sbp-lightbox-product-' + pid);
+
+    video.src = url;
+    lightbox.classList.add('active');
+
+    if (title) {
+      productDiv.innerHTML = '<div style="font-weight:600;margin-bottom:8px;">' + title + '</div>';
+    }
+
+    // Track view
+    fetch('/apps/superbundle/api/videos/view', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoUrl: url }),
+    }).catch(function() {});
+  };
+
+  window.sbpCloseLightbox = function(pid) {
+    var lightbox = document.getElementById('sbp-lightbox-' + pid);
+    var video = document.getElementById('sbp-lightbox-video-' + pid);
+    video.pause();
+    video.src = '';
+    lightbox.classList.remove('active');
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadVideos);
+  } else {
+    loadVideos();
+  }
+})();
+</script>
+
+{% schema %}
+{
+  "name": "Product Videos",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Section heading",
+      "default": "🎥 Watch in Action"
+    },
+    {
+      "type": "select",
+      "id": "widget_type",
+      "label": "Widget layout",
+      "options": [
+        { "value": "carousel", "label": "Carousel (horizontal scroll)" },
+        { "value": "grid", "label": "Grid" },
+        { "value": "story", "label": "Story (circular)" }
+      ],
+      "default": "carousel"
+    },
+    {
+      "type": "range",
+      "id": "columns",
+      "label": "Grid columns",
+      "min": 2,
+      "max": 5,
+      "step": 1,
+      "default": 3
+    },
+    {
+      "type": "color",
+      "id": "primary_color",
+      "label": "Primary color",
+      "default": "#5C6AC4"
+    },
+    {
+      "type": "range",
+      "id": "border_radius",
+      "label": "Card border radius",
+      "min": 0,
+      "max": 20,
+      "step": 2,
+      "default": 8
+    },
+    {
+      "type": "range",
+      "id": "padding_top",
+      "label": "Padding top",
+      "min": 0,
+      "max": 60,
+      "step": 4,
+      "default": 24
+    },
+    {
+      "type": "range",
+      "id": "padding_bottom",
+      "label": "Padding bottom",
+      "min": 0,
+      "max": 60,
+      "step": 4,
+      "default": 24
+    }
+  ]
+}
+{% endschema %}

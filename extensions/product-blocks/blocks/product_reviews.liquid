@@ -1,0 +1,431 @@
+{% comment %}
+  SuperBundle Pro — Product Reviews Block
+  Add this block to your product page template in the Theme Editor
+  Shopify Admin → Online Store → Themes → Customize → Product page → Add block → Apps → Reviews
+{% endcomment %}
+
+{% assign product_id = product.id %}
+{% assign shop_domain = shop.permanent_domain %}
+
+<div
+  class="superbundle-reviews-block"
+  data-product-id="{{ product_id }}"
+  data-shop="{{ shop_domain }}"
+  id="superbundle-reviews-{{ product_id }}"
+>
+
+  {%- if block.settings.show_summary -%}
+  <!-- Rating Summary -->
+  <div class="sbp-rating-summary">
+    <div class="sbp-rating-score">
+      <span class="sbp-score-number" id="sbp-avg-{{ product_id }}">—</span>
+      <div class="sbp-stars-display" id="sbp-stars-{{ product_id }}">
+        <span>★★★★★</span>
+      </div>
+      <span class="sbp-review-count" id="sbp-count-{{ product_id }}">Loading reviews...</span>
+    </div>
+
+    <div class="sbp-rating-bars" id="sbp-bars-{{ product_id }}">
+      {% for i in (1..5) reversed %}
+      <div class="sbp-bar-row">
+        <span class="sbp-bar-label">{{ i }}★</span>
+        <div class="sbp-bar-track">
+          <div class="sbp-bar-fill" data-rating="{{ i }}" style="width: 0%"></div>
+        </div>
+        <span class="sbp-bar-count" data-rating-count="{{ i }}">0</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {%- endif -%}
+
+  <!-- Write Review Button -->
+  {%- if block.settings.show_write_review -%}
+  <div class="sbp-write-review-wrap">
+    <button
+      class="sbp-write-review-btn"
+      onclick="document.getElementById('sbp-review-form-{{ product_id }}').style.display='block';this.style.display='none'"
+      style="background-color: {{ block.settings.primary_color }};"
+    >
+      ✏️ {{ block.settings.write_review_text | default: 'Write a Review' }}
+    </button>
+
+    <!-- Review Form -->
+    <div id="sbp-review-form-{{ product_id }}" style="display:none;" class="sbp-review-form">
+      <h4>Write Your Review</h4>
+
+      <div class="sbp-star-picker" id="sbp-star-picker-{{ product_id }}">
+        <span>Your Rating:</span>
+        {% for i in (1..5) %}
+        <span
+          class="sbp-star-pick"
+          data-value="{{ i }}"
+          onclick="sbpSetRating('{{ product_id }}', {{ i }})"
+        >★</span>
+        {% endfor %}
+      </div>
+      <input type="hidden" id="sbp-rating-val-{{ product_id }}" value="5" />
+
+      <input
+        type="text"
+        id="sbp-review-name-{{ product_id }}"
+        placeholder="Your name"
+        class="sbp-input"
+      />
+      <input
+        type="text"
+        id="sbp-review-title-{{ product_id }}"
+        placeholder="Review title (optional)"
+        class="sbp-input"
+      />
+      <textarea
+        id="sbp-review-body-{{ product_id }}"
+        placeholder="Share your experience with this product..."
+        class="sbp-textarea"
+        rows="4"
+      ></textarea>
+
+      {%- if block.settings.allow_photos -%}
+      <div class="sbp-photo-upload">
+        <label>📷 Add photos (optional)</label>
+        <input type="file" accept="image/*" multiple id="sbp-photos-{{ product_id }}" />
+      </div>
+      {%- endif -%}
+
+      <div class="sbp-form-actions">
+        <button
+          class="sbp-submit-btn"
+          style="background-color: {{ block.settings.primary_color }};"
+          onclick="sbpSubmitReview('{{ product_id }}', '{{ shop_domain }}')"
+        >
+          Submit Review
+        </button>
+        <button
+          class="sbp-cancel-btn"
+          onclick="document.getElementById('sbp-review-form-{{ product_id }}').style.display='none';document.querySelector('.sbp-write-review-btn').style.display='inline-block'"
+        >
+          Cancel
+        </button>
+      </div>
+
+      <div id="sbp-form-msg-{{ product_id }}" class="sbp-form-msg"></div>
+    </div>
+  </div>
+  {%- endif -%}
+
+  <!-- Reviews List -->
+  <div class="sbp-reviews-list" id="sbp-reviews-list-{{ product_id }}">
+    <div class="sbp-loading">Loading reviews...</div>
+  </div>
+
+  <!-- Load More -->
+  <div class="sbp-load-more-wrap" id="sbp-load-more-{{ product_id }}" style="display:none;">
+    <button
+      class="sbp-load-more-btn"
+      onclick="sbpLoadMore('{{ product_id }}', '{{ shop_domain }}')"
+    >
+      Load More Reviews
+    </button>
+  </div>
+
+</div>
+
+<style>
+  .superbundle-reviews-block {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    padding: {{ block.settings.padding_top | default: 24 }}px 0 {{ block.settings.padding_bottom | default: 24 }}px;
+    max-width: 100%;
+  }
+  .sbp-rating-summary {
+    display: flex;
+    gap: 32px;
+    align-items: flex-start;
+    margin-bottom: 24px;
+    padding: 20px;
+    background: #f9f9f9;
+    border-radius: 10px;
+  }
+  .sbp-rating-score { text-align: center; min-width: 80px; }
+  .sbp-score-number { font-size: 48px; font-weight: 800; color: #202223; line-height: 1; display: block; }
+  .sbp-stars-display { color: #f4a423; font-size: 18px; margin: 4px 0; }
+  .sbp-review-count { font-size: 13px; color: #6d7175; }
+  .sbp-rating-bars { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+  .sbp-bar-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .sbp-bar-label { width: 28px; color: #6d7175; text-align: right; }
+  .sbp-bar-track { flex: 1; height: 8px; background: #e1e3e5; border-radius: 4px; overflow: hidden; }
+  .sbp-bar-fill { height: 100%; background: {{ block.settings.primary_color | default: '#5C6AC4' }}; border-radius: 4px; transition: width 0.5s ease; }
+  .sbp-bar-count { width: 24px; color: #6d7175; }
+  .sbp-write-review-wrap { margin-bottom: 20px; }
+  .sbp-write-review-btn {
+    padding: 10px 20px; color: white; border: none; border-radius: 6px;
+    font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s;
+  }
+  .sbp-write-review-btn:hover { opacity: 0.85; }
+  .sbp-review-form {
+    margin-top: 16px; padding: 20px; border: 1px solid #e1e3e5;
+    border-radius: 10px; background: white;
+  }
+  .sbp-review-form h4 { margin: 0 0 16px; font-size: 16px; color: #202223; }
+  .sbp-star-picker { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; font-size: 14px; }
+  .sbp-star-pick { font-size: 28px; cursor: pointer; color: #e1e3e5; transition: color 0.15s; }
+  .sbp-star-pick.active, .sbp-star-pick:hover { color: #f4a423; }
+  .sbp-input {
+    width: 100%; padding: 10px 12px; border: 1px solid #c9cccf;
+    border-radius: 6px; font-size: 14px; margin-bottom: 10px;
+    box-sizing: border-box; outline: none;
+  }
+  .sbp-textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid #c9cccf;
+    border-radius: 6px; font-size: 14px; margin-bottom: 10px;
+    box-sizing: border-box; resize: vertical; outline: none;
+  }
+  .sbp-photo-upload { margin-bottom: 12px; font-size: 13px; color: #6d7175; }
+  .sbp-photo-upload input { margin-top: 6px; }
+  .sbp-form-actions { display: flex; gap: 10px; }
+  .sbp-submit-btn {
+    padding: 10px 20px; color: white; border: none;
+    border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .sbp-cancel-btn {
+    padding: 10px 20px; background: #f6f6f7; color: #6d7175;
+    border: 1px solid #e1e3e5; border-radius: 6px; font-size: 14px; cursor: pointer;
+  }
+  .sbp-form-msg { margin-top: 10px; font-size: 13px; padding: 8px 12px; border-radius: 6px; display: none; }
+  .sbp-form-msg.success { background: #e3f1eb; color: #008060; display: block; }
+  .sbp-form-msg.error { background: #fbe9e7; color: #d72c0d; display: block; }
+  .sbp-reviews-list { display: flex; flex-direction: column; gap: 16px; }
+  .sbp-loading { color: #6d7175; font-size: 14px; padding: 20px 0; }
+  .sbp-review-card {
+    padding: 16px; border: 1px solid #e1e3e5;
+    border-radius: 10px; background: white;
+  }
+  .sbp-review-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+  .sbp-reviewer { font-weight: 600; font-size: 14px; color: #202223; }
+  .sbp-verified { font-size: 11px; color: #008060; font-weight: 600; margin-left: 8px; }
+  .sbp-review-stars { color: #f4a423; font-size: 14px; }
+  .sbp-review-date { font-size: 12px; color: #6d7175; }
+  .sbp-review-title { font-weight: 600; font-size: 14px; color: #202223; margin-bottom: 6px; }
+  .sbp-review-body { font-size: 14px; color: #6d7175; line-height: 1.6; }
+  .sbp-review-photos { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .sbp-review-photos img { width: 60px; height: 60px; object-fit: cover; border-radius: 6px; border: 1px solid #e1e3e5; cursor: pointer; }
+  .sbp-load-more-wrap { text-align: center; margin-top: 20px; }
+  .sbp-load-more-btn {
+    padding: 10px 24px; background: #f6f6f7; color: #202223;
+    border: 1px solid #e1e3e5; border-radius: 6px; font-size: 14px;
+    font-weight: 600; cursor: pointer;
+  }
+  .sbp-empty { text-align: center; padding: 32px; color: #6d7175; font-size: 14px; }
+</style>
+
+<script>
+(function() {
+  var productId = "{{ product_id }}";
+  var shopDomain = "{{ shop_domain }}";
+  var page = 1;
+  var primaryColor = "{{ block.settings.primary_color | default: '#5C6AC4' }}";
+
+  function renderStars(rating) {
+    var full = Math.round(rating);
+    return '★'.repeat(full) + '☆'.repeat(5 - full);
+  }
+
+  function formatDate(dateStr) {
+    var d = new Date(dateStr);
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function loadReviews() {
+    var listEl = document.getElementById('sbp-reviews-list-' + productId);
+    var shopDomain = '{{ shop.permanent_domain }}';
+    var apiUrl = '/apps/superbundle-pro?_path=reviews&product_id=gid://shopify/Product/' + productId + '&shop=' + shopDomain + '&page=' + page;
+
+    fetch(apiUrl)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!data.reviews || data.reviews.length === 0) {
+          listEl.innerHTML = '<div class="sbp-empty">No reviews yet. Be the first to review this product!</div>';
+          return;
+        }
+
+        // Update summary
+        if (data.stats) {
+          var avgEl = document.getElementById('sbp-avg-' + productId);
+          var starsEl = document.getElementById('sbp-stars-' + productId);
+          var countEl = document.getElementById('sbp-count-' + productId);
+          if (avgEl) avgEl.textContent = data.stats.avgRating;
+          if (starsEl) starsEl.innerHTML = '<span>' + renderStars(parseFloat(data.stats.avgRating)) + '</span>';
+          if (countEl) countEl.textContent = data.stats.total + ' reviews';
+
+          // Update bars
+          [5,4,3,2,1].forEach(function(r) {
+            var fill = document.querySelector('[data-rating="' + r + '"]');
+            var count = document.querySelector('[data-rating-count="' + r + '"]');
+            var pct = data.stats.total > 0 ? Math.round(((data.stats['star' + r] || 0) / data.stats.total) * 100) : 0;
+            if (fill) fill.style.width = pct + '%';
+            if (count) count.textContent = data.stats['star' + r] || 0;
+          });
+        }
+
+        // Render reviews
+        var html = data.reviews.map(function(review) {
+          var photos = (review.photoUrls || []).map(function(url) {
+            return '<img src="' + url + '" alt="Review photo" onclick="window.open(this.src)" />';
+          }).join('');
+
+          return '<div class="sbp-review-card">' +
+            '<div class="sbp-review-header">' +
+              '<div>' +
+                '<span class="sbp-reviewer">' + review.customerName + '</span>' +
+                (review.verified ? '<span class="sbp-verified">✓ Verified</span>' : '') +
+                '<div class="sbp-review-date">' + formatDate(review.createdAt) + '</div>' +
+              '</div>' +
+              '<span class="sbp-review-stars">' + renderStars(review.rating) + '</span>' +
+            '</div>' +
+            (review.title ? '<div class="sbp-review-title">' + review.title + '</div>' : '') +
+            '<div class="sbp-review-body">' + review.body + '</div>' +
+            (photos ? '<div class="sbp-review-photos">' + photos + '</div>' : '') +
+            (review.reply ? '<div style="margin-top:10px;padding:10px;background:#f6f6f7;border-radius:6px;border-left:3px solid ' + primaryColor + ';font-size:13px"><strong>Store reply:</strong> ' + review.reply + '</div>' : '') +
+          '</div>';
+        }).join('');
+
+        if (page === 1) {
+          listEl.innerHTML = html;
+        } else {
+          listEl.innerHTML += html;
+        }
+
+        // Show/hide load more
+        var loadMoreEl = document.getElementById('sbp-load-more-' + productId);
+        if (loadMoreEl) {
+          loadMoreEl.style.display = data.hasMore ? 'block' : 'none';
+        }
+      })
+      .catch(function() {
+        listEl.innerHTML = '<div class="sbp-empty">Reviews unavailable right now.</div>';
+      });
+  }
+
+  // Star picker
+  window.sbpSetRating = function(pid, value) {
+    document.getElementById('sbp-rating-val-' + pid).value = value;
+    document.querySelectorAll('#sbp-star-picker-' + pid + ' .sbp-star-pick').forEach(function(star, i) {
+      star.classList.toggle('active', i < value);
+    });
+  };
+
+  // Submit review
+  window.sbpSubmitReview = function(pid, shop) {
+    var name = document.getElementById('sbp-review-name-' + pid).value.trim();
+    var title = document.getElementById('sbp-review-title-' + pid).value.trim();
+    var body = document.getElementById('sbp-review-body-' + pid).value.trim();
+    var rating = parseInt(document.getElementById('sbp-rating-val-' + pid).value);
+    var msgEl = document.getElementById('sbp-form-msg-' + pid);
+
+    if (!name || !body) {
+      msgEl.className = 'sbp-form-msg error';
+      msgEl.textContent = 'Please fill in your name and review.';
+      return;
+    }
+
+    fetch('/apps/superbundle-pro?_path=reviews&shop=' + shopDomain, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        productId: 'gid://shopify/Product/' + pid,
+        customerName: name,
+        title: title,
+        body: body,
+        rating: rating,
+        shop: shop,
+      }),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        msgEl.className = 'sbp-form-msg success';
+        msgEl.textContent = '✅ Thank you! Your review has been submitted for approval.';
+        document.getElementById('sbp-review-name-' + pid).value = '';
+        document.getElementById('sbp-review-body-' + pid).value = '';
+        document.getElementById('sbp-review-title-' + pid).value = '';
+      } else {
+        msgEl.className = 'sbp-form-msg error';
+        msgEl.textContent = 'Failed to submit review. Please try again.';
+      }
+    })
+    .catch(function() {
+      msgEl.className = 'sbp-form-msg error';
+      msgEl.textContent = 'Failed to submit review. Please try again.';
+    });
+  };
+
+  // Load more
+  window.sbpLoadMore = function(pid, shop) {
+    page++;
+    loadReviews();
+  };
+
+  // Init on DOM ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadReviews);
+  } else {
+    loadReviews();
+  }
+})();
+</script>
+
+{% schema %}
+{
+  "name": "Product Reviews",
+  "target": "section",
+  "settings": [
+    {
+      "type": "color",
+      "id": "primary_color",
+      "label": "Primary color",
+      "default": "#5C6AC4"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_summary",
+      "label": "Show rating summary",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_write_review",
+      "label": "Show write review button",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "write_review_text",
+      "label": "Write review button text",
+      "default": "Write a Review"
+    },
+    {
+      "type": "checkbox",
+      "id": "allow_photos",
+      "label": "Allow photo uploads",
+      "default": true
+    },
+    {
+      "type": "range",
+      "id": "padding_top",
+      "label": "Padding top",
+      "min": 0,
+      "max": 60,
+      "step": 4,
+      "default": 24
+    },
+    {
+      "type": "range",
+      "id": "padding_bottom",
+      "label": "Padding bottom",
+      "min": 0,
+      "max": 60,
+      "step": 4,
+      "default": 24
+    }
+  ]
+}
+{% endschema %}
